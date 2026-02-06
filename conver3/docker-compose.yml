@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  ner-training:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ner-training:latest
+    container_name: ner-training-dual-5090d
+
+    # GPU配置 - 使用两张5090D
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 2  # 使用2张GPU
+              capabilities: [gpu]
+
+    # 环境变量
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=0,1  # 指定使用GPU 0和1
+      - CUDA_VISIBLE_DEVICES=0,1
+      - PYTHONUNBUFFERED=1
+      - OMP_NUM_THREADS=16
+      - TOKENIZERS_PARALLELISM=false
+
+    # 挂载卷
+    volumes:
+      # 挂载代码目录（开发模式）
+      - ./:/workspace
+      # 挂载数据目录
+      - ./data:/workspace/data
+      # 挂载模型保存目录
+      - ./models:/workspace/models
+      # 缓存目录（加速）
+      - huggingface-cache:/root/.cache/huggingface
+      - pip-cache:/root/.cache/pip
+
+    # 工作目录
+    working_dir: /workspace
+
+    # 默认命令（可以被覆盖）
+    command: python train_multi_gpu.py
+
+    # 网络模式
+    network_mode: "host"
+
+    # IPC模式（重要：提高多进程性能）
+    ipc: host
+
+    # 共享内存大小
+    shm_size: '32gb'
+
+    # 重启策略
+    restart: unless-stopped
+
+# 定义卷
+volumes:
+  huggingface-cache:
+    driver: local
+  pip-cache:
+    driver: local

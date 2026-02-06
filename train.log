@@ -1,0 +1,116 @@
+nohup: ignoring input
+Using 2 GPUs: GPU 0 and GPU 1
+Some weights of BertModel were not initialized from the model checkpoint at /root/nvme4n1/docker-data/overlay2/c9f7b6741dfcc1013d590cdaba3b9686650ef2eb2c2efe9b218b7f83b9208a37/diff/workspace/GPT_SoVITS/pretrained_models/chinese-roberta-wwm-ext-large and are newly initialized: ['pooler.dense.bias', 'pooler.dense.weight']
+You should probably TRAIN this model on a down-stream task to be able to use it for predictions and inference.
+Some weights of BertModel were not initialized from the model checkpoint at /root/nvme4n1/docker-data/overlay2/c9f7b6741dfcc1013d590cdaba3b9686650ef2eb2c2efe9b218b7f83b9208a37/diff/workspace/GPT_SoVITS/pretrained_models/chinese-roberta-wwm-ext-large and are newly initialized: ['pooler.dense.bias', 'pooler.dense.weight']
+You should probably TRAIN this model on a down-stream task to be able to use it for predictions and inference.
+
+================================================================================
+🚀 Distributed Data Parallel Training
+================================================================================
+World Size (GPUs): 2
+  GPU 0: NVIDIA H800
+  GPU 1: NVIDIA H800
+================================================================================
+
+Loading data...
+Creating model...
+
+Computing class weights...
+
+Class weights computed:
+  O (ID=0): weight=0.0000, count=640
+  B_BI (ID=1): weight=0.0000, count=1
+  I_BI (ID=2): weight=0.0000, count=360
+  E_BI (ID=3): weight=0.0000, count=770
+  B_CNU (ID=4): weight=0.0000, count=1042
+  I_CNU (ID=5): weight=0.0000, count=341
+  E_CNU (ID=6): weight=0.0000, count=36
+  B_EDU (ID=7): weight=0.0000, count=2
+  I_EDU (ID=8): weight=0.0000, count=817
+  E_EDU (ID=9): weight=10.0000, count=0
+
+Starting training...
+
+Epoch 1/200
+Training:   0%|          | 0/52 [00:00<?, ?it/s]Training:   0%|          | 0/52 [00:21<?, ?it/s]
+[rank0]:[W205 11:41:15.467429889 ProcessGroupNCCL.cpp:1479] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())
+[rank0]:[W205 11:41:15.182845087 CudaIPCTypes.cpp:16] Producer process has been terminated before all shared CUDA tensors released. See Note [Sharing CUDA tensors]
+W0205 11:41:16.448891 946483 site-packages/torch/multiprocessing/spawn.py:169] Terminating process 946853 via signal SIGTERM
+Traceback (most recent call last):
+  File "/root/cw_ws/weishenfuyong/conver3/train_ddp.py", line 488, in <module>
+    main()
+  File "/root/cw_ws/weishenfuyong/conver3/train_ddp.py", line 479, in main
+    mp.spawn(
+  File "/root/anaconda3/envs/privacy_ner/lib/python3.9/site-packages/torch/multiprocessing/spawn.py", line 340, in spawn
+    return start_processes(fn, args, nprocs, join, daemon, start_method="spawn")
+  File "/root/anaconda3/envs/privacy_ner/lib/python3.9/site-packages/torch/multiprocessing/spawn.py", line 296, in start_processes
+    while not context.join():
+  File "/root/anaconda3/envs/privacy_ner/lib/python3.9/site-packages/torch/multiprocessing/spawn.py", line 215, in join
+    raise ProcessRaisedException(msg, error_index, failed_process.pid)
+torch.multiprocessing.spawn.ProcessRaisedException: 
+
+-- Process 0 terminated with the following error:
+Traceback (most recent call last):
+  File "/root/anaconda3/envs/privacy_ner/lib/python3.9/site-packages/torch/multiprocessing/spawn.py", line 90, in _wrap
+    fn(i, *args)
+  File "/root/cw_ws/weishenfuyong/conver3/train_ddp.py", line 423, in train_worker
+    train_loss = train_epoch(model, train_loader, optimizer, scheduler, config, rank, None, None, ema)
+  File "/root/cw_ws/weishenfuyong/conver3/train_ddp.py", line 99, in train_epoch
+    logits2 = model(input_ids, attention_mask, span_positions)
+  File "/root/anaconda3/envs/privacy_ner/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/root/anaconda3/envs/privacy_ner/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/root/anaconda3/envs/privacy_ner/lib/python3.9/site-packages/torch/nn/parallel/distributed.py", line 1637, in forward
+    else self._run_ddp_forward(*inputs, **kwargs)
+  File "/root/anaconda3/envs/privacy_ner/lib/python3.9/site-packages/torch/nn/parallel/distributed.py", line 1464, in _run_ddp_forward
+    return self.module(*inputs, **kwargs)  # type: ignore[index]
+  File "/root/anaconda3/envs/privacy_ner/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/root/anaconda3/envs/privacy_ner/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/root/cw_ws/weishenfuyong/conver3/model.py", line 157, in forward
+    outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
+  File "/root/anaconda3/envs/privacy_ner/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/root/anaconda3/envs/privacy_ner/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/root/anaconda3/envs/privacy_ner/lib/python3.9/site-packages/transformers/models/bert/modeling_bert.py", line 1000, in forward
+    encoder_outputs = self.encoder(
+  File "/root/anaconda3/envs/privacy_ner/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/root/anaconda3/envs/privacy_ner/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/root/anaconda3/envs/privacy_ner/lib/python3.9/site-packages/transformers/models/bert/modeling_bert.py", line 650, in forward
+    layer_outputs = layer_module(
+  File "/root/anaconda3/envs/privacy_ner/lib/python3.9/site-packages/transformers/modeling_layers.py", line 94, in __call__
+    return super().__call__(*args, **kwargs)
+  File "/root/anaconda3/envs/privacy_ner/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/root/anaconda3/envs/privacy_ner/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/root/anaconda3/envs/privacy_ner/lib/python3.9/site-packages/transformers/utils/deprecation.py", line 172, in wrapped_func
+    return func(*args, **kwargs)
+  File "/root/anaconda3/envs/privacy_ner/lib/python3.9/site-packages/transformers/models/bert/modeling_bert.py", line 558, in forward
+    self_attention_outputs = self.attention(
+  File "/root/anaconda3/envs/privacy_ner/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/root/anaconda3/envs/privacy_ner/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/root/anaconda3/envs/privacy_ner/lib/python3.9/site-packages/transformers/utils/deprecation.py", line 172, in wrapped_func
+    return func(*args, **kwargs)
+  File "/root/anaconda3/envs/privacy_ner/lib/python3.9/site-packages/transformers/models/bert/modeling_bert.py", line 488, in forward
+    self_outputs = self.self(
+  File "/root/anaconda3/envs/privacy_ner/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/root/anaconda3/envs/privacy_ner/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/root/anaconda3/envs/privacy_ner/lib/python3.9/site-packages/transformers/utils/deprecation.py", line 172, in wrapped_func
+    return func(*args, **kwargs)
+  File "/root/anaconda3/envs/privacy_ner/lib/python3.9/site-packages/transformers/models/bert/modeling_bert.py", line 413, in forward
+    attn_output = torch.nn.functional.scaled_dot_product_attention(
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 128.00 MiB. GPU 0 has a total capacity of 79.10 GiB of which 21.50 MiB is free. Including non-PyTorch memory, this process has 77.03 GiB memory in use. Process 950755 has 516.00 MiB memory in use. Process 951271 has 516.00 MiB memory in use. Process 951587 has 516.00 MiB memory in use. Process 952058 has 516.00 MiB memory in use. Of the allocated memory 75.52 GiB is allocated by PyTorch, and 43.40 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+
+/root/anaconda3/envs/privacy_ner/lib/python3.9/multiprocessing/resource_tracker.py:216: UserWarning: resource_tracker: There appear to be 20 leaked semaphore objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '
