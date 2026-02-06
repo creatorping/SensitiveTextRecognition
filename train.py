@@ -340,7 +340,6 @@ def train(config):
         mode='max',
         factor=0.5,
         patience=3,
-        verbose=True,
         min_lr=1e-7
     )
 
