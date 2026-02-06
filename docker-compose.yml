@@ -4,8 +4,8 @@ services:
   ner-training:
     build:
       context: .
-      dockerfile: Dockerfile
-    image: ner-training:latest
+      dockerfile: Dockerfile.pytorch5090
+    image: ner-training:pytorch5090
     container_name: ner-training-dual-5090d
 
     # GPU配置 - 使用两张5090D
