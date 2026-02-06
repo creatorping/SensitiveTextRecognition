@@ -3,7 +3,7 @@ Training script with adversarial training and model smoothing
 """
 import os
 # 在导入torch之前设置CUDA设备，确保使用指定的GPU
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"  # 使用第二块GPU，改成"0"使用第一块
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # 使用第一块GPU，改成"1"使用第二块
 
 import torch
 import torch.nn as nn

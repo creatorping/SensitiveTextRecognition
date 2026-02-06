@@ -80,8 +80,8 @@ class Config:
     # Label smoothing
     label_smoothing = 0.1  # Re-enabled with conservative value
 
-    # Device - 指定使用第二块GPU (cuda:1)
-    gpu_id = 1  # 0表示第一块GPU，1表示第二块GPU，以此类推
+    # Device - 指定使用第一块GPU (cuda:0)
+    gpu_id = 0  # 0表示第一块GPU，1表示第二块GPU，以此类推
     device = torch.device(f'cuda:{gpu_id}' if torch.cuda.is_available() else 'cpu')
 
     # Paths
