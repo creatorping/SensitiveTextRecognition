@@ -29,12 +29,12 @@ class Config:
     biaffine_size = 512         # 从256增加到512
 
     # ========== H800 80GB 训练参数优化 ==========
-    batch_size = 128            # 大幅增加batch_size，充分利用显存
+    batch_size = 16             # 1.3B模型需要较小batch_size
     learning_rate = 2e-5        # 稍微提高学习率
     weight_decay = 0.01
     num_epochs = 100            # 大模型收敛更快
     warmup_ratio = 0.1
-    gradient_accumulation_steps = 2  # 有效batch_size = 256
+    gradient_accumulation_steps = 16  # 有效batch_size = 256
     max_grad_norm = 1.0
 
     # Early stopping
@@ -44,15 +44,15 @@ class Config:
     use_amp = True
     amp_dtype = "bfloat16"      # H800推荐使用bfloat16
 
-    # Gradient Checkpointing - 显存充足时关闭以提升速度
-    use_gradient_checkpointing = False  # 80GB显存足够，关闭以提速
+    # Gradient Checkpointing - 大模型必须启用
+    use_gradient_checkpointing = True  # 1.3B模型需要启用以节省显存
 
     # Class imbalance handling
     reduce_o_weight = True
 
     # ========== 对抗训练 - 提升鲁棒性 ==========
     use_fgm = True
-    use_pgd = True              # 同时启用PGD，更强的对抗训练
+    use_pgd = False             # 1.3B模型只用FGM，避免OOM
     adv_epsilon = 1.0           # 增大扰动
     adv_alpha = 0.3
     adv_k = 3
