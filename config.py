@@ -1,87 +1,70 @@
 """
 Configuration for Nested Privacy Entity Recognition
+针对H800 80GB显存深度优化，目标F1 > 95%
 """
 import torch
 
 class Config:
-    # ========== 模型选择 ==========
-    # 可选模型（按性能从低到高排序）:
-    # 1. chinese-roberta-wwm-ext-large (1024 hidden, 推荐基线)
-    # 2. chinese-macbert-large (1024 hidden, 更好的MLM预训练)
-    # 3. ernie-3.0-base-zh (768 hidden, 百度ERNIE)
-    # 4. chinese-lert-large (1024 hidden, 词汇增强)
-    # 5. Erlangshen-MegatronBert-1.3B (2048 hidden, 13亿参数，需要更多显存)
-    # 6. chinese-alpaca-2-13b (5120 hidden, 130亿参数LLM，需要量化)
+    # ========== H800 80GB 深度优化配置 ==========
 
-    # ========== 推荐的更强模型配置 ==========
-    # 选项1: MacBERT-Large (推荐，性能提升明显，显存需求适中)
+    # Model settings - 使用更强大的模型
+    # 选项1: 本地RoBERTa-large (如果没有下载大模型)
+    # model_name = "/root/nvme4n1/docker-data/overlay2/c9f7b6741dfcc1013d590cdaba3b9686650ef2eb2c2efe9b218b7f83b9208a37/diff/workspace/GPT_SoVITS/pretrained_models/chinese-roberta-wwm-ext-large"
+    # hidden_size = 1024
+
+    # 选项2: Erlangshen-MegatronBert-1.3B (13亿参数，推荐)
+    model_name = "IDEA-CCNL/Erlangshen-MegatronBert-1.3B"
+    hidden_size = 2048
+
+    # 选项3: 如果上面的模型下载失败，使用MacBERT-Large
     # model_name = "hfl/chinese-macbert-large"
     # hidden_size = 1024
 
-    # 选项2: LERT-Large (词汇增强，对NER任务效果好)
-    # model_name = "hfl/chinese-lert-large"
-    # hidden_size = 1024
-
-    # 选项3: Erlangshen-MegatronBert-1.3B (13亿参数，H800可以轻松运行)
-    # model_name = "IDEA-CCNL/Erlangshen-MegatronBert-1.3B"
-    # hidden_size = 2048
-
-    # 选项4: ChatGLM3-6B 作为编码器 (60亿参数，需要特殊处理)
-    # model_name = "THUDM/chatglm3-6b"
-    # hidden_size = 4096
-
-    # Model settings - 当前使用的模型
-    # 使用本地模型路径（如果有本地模型）或Hugging Face模型名
-    model_name = "/root/nvme4n1/docker-data/overlay2/c9f7b6741dfcc1013d590cdaba3b9686650ef2eb2c2efe9b218b7f83b9208a37/diff/workspace/GPT_SoVITS/pretrained_models/chinese-roberta-wwm-ext-large"  # Chinese BERT model
-    # 如果要使用更强的模型，取消下面的注释：
-    # model_name = "IDEA-CCNL/Erlangshen-MegatronBert-1.3B"  # 13亿参数大模型
-
     max_length = 512
-    hidden_size = 1024  # RoBERTa-large: 1024, MegatronBert-1.3B: 2048
-    num_labels = 28  # 9 entity types (BI, CNU, EDU, JOB, JOB_ADDS, LOC, MS, PC, PI) × 3 prefixes (B/I/E) + O
+    num_labels = 28  # 9 entity types × 3 prefixes (B/I/E) + O
 
-    # Span-based settings
-    max_span_length = 50  # Maximum entity span length
-    span_hidden_size = 256
-    biaffine_size = 256
+    # Span-based settings - 增大以提升性能
+    max_span_length = 50
+    span_hidden_size = 512      # 从256增加到512
+    biaffine_size = 512         # 从256增加到512
 
-    # Training settings - 针对双H800优化 (80GB内存优化)
-    batch_size = 64  # Reduced from 256 to improve generalization
-    learning_rate = 1e-5  # Reduced from 3e-5 for stability
+    # ========== H800 80GB 训练参数优化 ==========
+    batch_size = 128            # 大幅增加batch_size，充分利用显存
+    learning_rate = 2e-5        # 稍微提高学习率
     weight_decay = 0.01
-    num_epochs = 200
+    num_epochs = 100            # 大模型收敛更快
     warmup_ratio = 0.1
-    gradient_accumulation_steps = 2  # Increased for effective batch size of 128
+    gradient_accumulation_steps = 2  # 有效batch_size = 256
     max_grad_norm = 1.0
 
     # Early stopping
-    early_stopping_patience = 10  # Stop if no improvement for 10 epochs
+    early_stopping_patience = 15  # 增加耐心，大模型需要更多时间
 
-    # 混合精度训练（AMP）- 显著提升训练速度
-    use_amp = True  # 启用自动混合精度训练，可提速2-3倍
+    # 混合精度训练 - H800支持BF16，更稳定
+    use_amp = True
+    amp_dtype = "bfloat16"      # H800推荐使用bfloat16
 
-    # Gradient Checkpointing - 节省显存，可训练更大模型
-    use_gradient_checkpointing = True  # Re-enabled to save memory with smaller batch size
+    # Gradient Checkpointing - 显存充足时关闭以提升速度
+    use_gradient_checkpointing = False  # 80GB显存足够，关闭以提速
 
     # Class imbalance handling
-    reduce_o_weight = True  # Reduce weight for 'O' class to focus on entities
+    reduce_o_weight = True
 
-    # Adversarial training
-    use_fgm = True  # Re-enabled with conservative settings
-    use_pgd = False
-    adv_epsilon = 0.5  # Reduced from 1.0 for stability
+    # ========== 对抗训练 - 提升鲁棒性 ==========
+    use_fgm = True
+    use_pgd = True              # 同时启用PGD，更强的对抗训练
+    adv_epsilon = 1.0           # 增大扰动
     adv_alpha = 0.3
-    adv_k = 3  # PGD steps
+    adv_k = 3
 
-    # Model smoothing (R-Drop)
-    use_rdrop = True  # Re-enabled for regularization
-    rdrop_alpha = 0.5  # Conservative value to prevent instability
+    # ========== 正则化技术 ==========
+    use_rdrop = True
+    rdrop_alpha = 0.7           # 增大R-Drop强度
 
     # Label smoothing
-    label_smoothing = 0.1  # Re-enabled with conservative value
+    label_smoothing = 0.1
 
-    # Device - 通过外部环境变量 CUDA_VISIBLE_DEVICES 指定GPU
-    # 例如: CUDA_VISIBLE_DEVICES=1 python train.py 使用第二块GPU
+    # Device
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # Paths
@@ -108,23 +91,47 @@ class Config:
     seed = 42
 
     # Resume training
-    resume_from_checkpoint = None  # Set to 'best_model.pt' to resume training
-    resume_epoch = 0  # Will be automatically set when loading checkpoint
+    resume_from_checkpoint = None
 
-    # ========== Advanced Features (New) ==========
+    # ========== 高级特性 ==========
 
-    # Focal Loss
-    use_focal_loss = True          # Use Focal Loss instead of CE Loss
-    focal_gamma = 2.0              # Focusing parameter (higher = focus more on hard examples)
-    focal_alpha = None             # Will use class_weights if None
+    # Focal Loss - 处理类别不平衡
+    use_focal_loss = True
+    focal_gamma = 2.0
+    focal_alpha = None
 
-    # Data Augmentation
-    use_data_augmentation = False  # Enable data augmentation (set True after initial training)
-    aug_prob = 0.15                # Probability of applying augmentation
+    # Data Augmentation - 启用数据增强
+    use_data_augmentation = True   # 启用数据增强
+    aug_prob = 0.2                 # 增强概率
 
     # CRF Model
-    use_crf_model = False          # Use BiLSTM-CRF model (set True for better performance)
-    freeze_bert_layers = 0         # Number of BERT layers to freeze (0 = train all)
-    lstm_hidden_size = 512         # BiLSTM hidden size
-    lstm_num_layers = 2            # Number of BiLSTM layers
-    lstm_dropout = 0.1             # BiLSTM dropout
+    use_crf_model = False
+    freeze_bert_layers = 0
+    lstm_hidden_size = 512
+    lstm_num_layers = 2
+    lstm_dropout = 0.1
+
+    # ========== 新增：模型集成与高级优化 ==========
+
+    # 多头注意力增强
+    use_multi_head_attention = True
+    num_attention_heads = 8
+
+    # 层次化特征融合
+    use_layer_fusion = True        # 融合BERT多层特征
+    fusion_layers = [-1, -2, -3, -4]  # 使用最后4层
+
+    # Dropout设置
+    hidden_dropout = 0.1
+    attention_dropout = 0.1
+    classifier_dropout = 0.3
+
+    # 对比学习（可选）
+    use_contrastive_loss = False
+    contrastive_temperature = 0.07
+
+    # 知识蒸馏（可选，用于后续优化）
+    use_knowledge_distillation = False
+    teacher_model_path = None
+    distill_temperature = 4.0
+    distill_alpha = 0.5

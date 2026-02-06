@@ -1,10 +1,12 @@
 """
 Training script with adversarial training and model smoothing
+针对H800 80GB显存优化，支持BF16混合精度训练
 """
 import os
 import torch
 import torch.nn as nn
 from torch.optim import AdamW
+from torch.cuda.amp import autocast, GradScaler
 from transformers import get_linear_schedule_with_warmup
 from tqdm import tqdm
 import numpy as np
@@ -15,6 +17,14 @@ from config import Config
 from model import NestedPrivacyNER
 from data_loader import create_dataloader
 from adversarial import FGM, PGD, RDrop, EMA
+
+
+def get_amp_dtype(config):
+    """获取混合精度训练的数据类型"""
+    amp_dtype = getattr(config, 'amp_dtype', 'float16')
+    if amp_dtype == 'bfloat16' and torch.cuda.is_bf16_supported():
+        return torch.bfloat16
+    return torch.float16
 
 
 def set_seed(seed):
@@ -61,11 +71,15 @@ def compute_loss(logits, labels, label_smoothing=0.0, class_weights=None):
     return loss
 
 
-def train_epoch(model, dataloader, optimizer, scheduler, config, fgm=None, pgd=None, ema=None):
-    """Train for one epoch"""
+def train_epoch(model, dataloader, optimizer, scheduler, config, fgm=None, pgd=None, ema=None, scaler=None):
+    """Train for one epoch with AMP support"""
     model.train()
     total_loss = 0
     progress_bar = tqdm(dataloader, desc="Training")
+
+    # 获取AMP数据类型
+    amp_dtype = get_amp_dtype(config)
+    use_amp = getattr(config, 'use_amp', False)
 
     # Initialize gradients
     optimizer.zero_grad()
@@ -76,30 +90,31 @@ def train_epoch(model, dataloader, optimizer, scheduler, config, fgm=None, pgd=N
         span_positions = batch['span_positions'].to(config.device)
         span_labels = batch['span_labels'].to(config.device)
 
-        # Forward pass
+        # Forward pass with AMP
         class_weights = getattr(config, 'class_weights', None)
 
-        if config.use_rdrop:
-            # R-Drop: forward twice with different dropout
-            logits1 = model(input_ids, attention_mask, span_positions)
-            logits2 = model(input_ids, attention_mask, span_positions)
+        with autocast(enabled=use_amp, dtype=amp_dtype):
+            if config.use_rdrop:
+                # R-Drop: forward twice with different dropout
+                logits1 = model(input_ids, attention_mask, span_positions)
+                logits2 = model(input_ids, attention_mask, span_positions)
 
-            # Compute CE loss with class weights
-            ce_loss1 = compute_loss(logits1, span_labels, config.label_smoothing, class_weights)
-            ce_loss2 = compute_loss(logits2, span_labels, config.label_smoothing, class_weights)
-            ce_loss = (ce_loss1 + ce_loss2) / 2
+                # Compute CE loss with class weights
+                ce_loss1 = compute_loss(logits1, span_labels, config.label_smoothing, class_weights)
+                ce_loss2 = compute_loss(logits2, span_labels, config.label_smoothing, class_weights)
+                ce_loss = (ce_loss1 + ce_loss2) / 2
 
-            # Compute KL loss
-            mask = span_labels != -1
-            kl_loss = RDrop.compute_kl_loss(logits1, logits2, mask.float())
+                # Compute KL loss
+                mask = span_labels != -1
+                kl_loss = RDrop.compute_kl_loss(logits1, logits2, mask.float())
 
-            # Total loss
-            loss = ce_loss + config.rdrop_alpha * kl_loss
-        else:
-            logits = model(input_ids, attention_mask, span_positions)
-            loss = compute_loss(logits, span_labels, config.label_smoothing, class_weights)
+                # Total loss
+                loss = ce_loss + config.rdrop_alpha * kl_loss
+            else:
+                logits = model(input_ids, attention_mask, span_positions)
+                loss = compute_loss(logits, span_labels, config.label_smoothing, class_weights)
 
-        # Backward
+        # Backward with gradient scaling
         loss = loss / config.gradient_accumulation_steps
 
         # Check for NaN before backward
@@ -108,24 +123,31 @@ def train_epoch(model, dataloader, optimizer, scheduler, config, fgm=None, pgd=N
             optimizer.zero_grad()
             continue
 
-        loss.backward()
+        if scaler is not None:
+            scaler.scale(loss).backward()
+        else:
+            loss.backward()
 
         # Adversarial training - FGM
         if config.use_fgm and fgm is not None:
             fgm.attack(emb_name='word_embeddings')
-            if config.use_rdrop:
-                logits_adv1 = model(input_ids, attention_mask, span_positions)
-                logits_adv2 = model(input_ids, attention_mask, span_positions)
-                ce_loss_adv1 = compute_loss(logits_adv1, span_labels, config.label_smoothing, class_weights)
-                ce_loss_adv2 = compute_loss(logits_adv2, span_labels, config.label_smoothing, class_weights)
-                loss_adv = (ce_loss_adv1 + ce_loss_adv2) / 2
-            else:
-                logits_adv = model(input_ids, attention_mask, span_positions)
-                loss_adv = compute_loss(logits_adv, span_labels, config.label_smoothing, class_weights)
+            with autocast(enabled=use_amp, dtype=amp_dtype):
+                if config.use_rdrop:
+                    logits_adv1 = model(input_ids, attention_mask, span_positions)
+                    logits_adv2 = model(input_ids, attention_mask, span_positions)
+                    ce_loss_adv1 = compute_loss(logits_adv1, span_labels, config.label_smoothing, class_weights)
+                    ce_loss_adv2 = compute_loss(logits_adv2, span_labels, config.label_smoothing, class_weights)
+                    loss_adv = (ce_loss_adv1 + ce_loss_adv2) / 2
+                else:
+                    logits_adv = model(input_ids, attention_mask, span_positions)
+                    loss_adv = compute_loss(logits_adv, span_labels, config.label_smoothing, class_weights)
             loss_adv = loss_adv / config.gradient_accumulation_steps
 
             if not (torch.isnan(loss_adv) or torch.isinf(loss_adv)):
-                loss_adv.backward()
+                if scaler is not None:
+                    scaler.scale(loss_adv).backward()
+                else:
+                    loss_adv.backward()
             fgm.restore(emb_name='word_embeddings')
 
         # Adversarial training - PGD
@@ -137,23 +159,30 @@ def train_epoch(model, dataloader, optimizer, scheduler, config, fgm=None, pgd=N
                     model.zero_grad()
                 else:
                     pgd.restore_grad()
-                if config.use_rdrop:
-                    logits_adv1 = model(input_ids, attention_mask, span_positions)
-                    logits_adv2 = model(input_ids, attention_mask, span_positions)
-                    ce_loss_adv1 = compute_loss(logits_adv1, span_labels, config.label_smoothing, class_weights)
-                    ce_loss_adv2 = compute_loss(logits_adv2, span_labels, config.label_smoothing, class_weights)
-                    loss_adv = (ce_loss_adv1 + ce_loss_adv2) / 2
-                else:
-                    logits_adv = model(input_ids, attention_mask, span_positions)
-                    loss_adv = compute_loss(logits_adv, span_labels, config.label_smoothing, class_weights)
+                with autocast(enabled=use_amp, dtype=amp_dtype):
+                    if config.use_rdrop:
+                        logits_adv1 = model(input_ids, attention_mask, span_positions)
+                        logits_adv2 = model(input_ids, attention_mask, span_positions)
+                        ce_loss_adv1 = compute_loss(logits_adv1, span_labels, config.label_smoothing, class_weights)
+                        ce_loss_adv2 = compute_loss(logits_adv2, span_labels, config.label_smoothing, class_weights)
+                        loss_adv = (ce_loss_adv1 + ce_loss_adv2) / 2
+                    else:
+                        logits_adv = model(input_ids, attention_mask, span_positions)
+                        loss_adv = compute_loss(logits_adv, span_labels, config.label_smoothing, class_weights)
                 loss_adv = loss_adv / config.gradient_accumulation_steps
 
                 if not (torch.isnan(loss_adv) or torch.isinf(loss_adv)):
-                    loss_adv.backward()
+                    if scaler is not None:
+                        scaler.scale(loss_adv).backward()
+                    else:
+                        loss_adv.backward()
             pgd.restore(emb_name='word_embeddings')
 
         # Gradient accumulation
         if (batch_idx + 1) % config.gradient_accumulation_steps == 0:
+            if scaler is not None:
+                scaler.unscale_(optimizer)
+
             # Check for NaN gradients
             has_nan_grad = False
             for name, param in model.named_parameters():
@@ -165,10 +194,18 @@ def train_epoch(model, dataloader, optimizer, scheduler, config, fgm=None, pgd=N
             if has_nan_grad:
                 print("Skipping optimizer step due to NaN gradients")
                 optimizer.zero_grad()
+                if scaler is not None:
+                    scaler.update()
                 continue
 
             torch.nn.utils.clip_grad_norm_(model.parameters(), config.max_grad_norm)
-            optimizer.step()
+
+            if scaler is not None:
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                optimizer.step()
+
             scheduler.step()
             optimizer.zero_grad()
 
@@ -263,13 +300,13 @@ def evaluate(model, dataloader, config, debug=False):
 
 
 def train(config):
-    """Main training function"""
+    """Main training function - H800优化版"""
     # Set seed
     set_seed(config.seed)
 
     # 打印GPU信息
     print("="*60)
-    print("GPU Configuration")
+    print("H800 GPU Configuration")
     print("="*60)
     if torch.cuda.is_available():
         print(f"CUDA Available: True")
@@ -277,13 +314,36 @@ def train(config):
         print(f"Number of GPUs visible: {torch.cuda.device_count()}")
         print(f"Current device: {config.device}")
         print(f"GPU Name: {torch.cuda.get_device_name(0)}")
-        print(f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB")
+        gpu_mem = torch.cuda.get_device_properties(0).total_memory / 1024**3
+        print(f"GPU Memory: {gpu_mem:.1f} GB")
+        print(f"BF16 Supported: {torch.cuda.is_bf16_supported()}")
+        print(f"AMP Enabled: {config.use_amp}")
+        print(f"AMP Dtype: {getattr(config, 'amp_dtype', 'float16')}")
     else:
         print("CUDA Available: False, using CPU")
     print("="*60)
 
+    # 打印模型配置
+    print("\n" + "="*60)
+    print("Model Configuration")
+    print("="*60)
+    print(f"Model: {config.model_name}")
+    print(f"Hidden Size: {config.hidden_size}")
+    print(f"Batch Size: {config.batch_size}")
+    print(f"Gradient Accumulation: {config.gradient_accumulation_steps}")
+    print(f"Effective Batch Size: {config.batch_size * config.gradient_accumulation_steps}")
+    print(f"Learning Rate: {config.learning_rate}")
+    print(f"Max Length: {config.max_length}")
+    print(f"Span Hidden Size: {config.span_hidden_size}")
+    print(f"Biaffine Size: {config.biaffine_size}")
+    print(f"Layer Fusion: {getattr(config, 'use_layer_fusion', False)}")
+    print(f"Multi-Head Attention: {getattr(config, 'use_multi_head_attention', False)}")
+    print(f"FGM: {config.use_fgm}, PGD: {config.use_pgd}")
+    print(f"R-Drop: {config.use_rdrop}")
+    print("="*60)
+
     # Create dataloaders
-    print("Loading data...")
+    print("\nLoading data...")
     train_loader, tokenizer = create_dataloader(
         config.train_data_path,
         config.train_label_path,
@@ -298,9 +358,30 @@ def train(config):
         is_train=False
     )
 
+    print(f"Training samples: {len(train_loader.dataset)}")
+    print(f"Test samples: {len(test_loader.dataset)}")
+
     # Create model
-    print("Creating model...")
+    print("\nCreating model...")
     model = NestedPrivacyNER(config).to(config.device)
+
+    # 打印模型参数量
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"Total parameters: {total_params / 1e6:.2f}M")
+    print(f"Trainable parameters: {trainable_params / 1e6:.2f}M")
+
+    # 初始化GradScaler（用于混合精度训练）
+    use_amp = getattr(config, 'use_amp', False)
+    amp_dtype = getattr(config, 'amp_dtype', 'float16')
+    # BF16不需要GradScaler
+    if use_amp and amp_dtype != 'bfloat16':
+        scaler = GradScaler()
+        print("Using GradScaler for FP16 training")
+    else:
+        scaler = None
+        if use_amp:
+            print("Using BF16 training (no GradScaler needed)")
 
     # Load checkpoint if resuming
     start_epoch = 0
@@ -310,7 +391,7 @@ def train(config):
         print(f"\nLoading checkpoint from {config.resume_from_checkpoint}...")
         checkpoint = torch.load(config.resume_from_checkpoint, map_location=config.device)
         model.load_state_dict(checkpoint['model_state_dict'])
-        start_epoch = checkpoint.get('epoch', 0) + 1  # Start from next epoch
+        start_epoch = checkpoint.get('epoch', 0) + 1
         best_f1 = checkpoint.get('f1', 0)
         patience_counter = checkpoint.get('patience_counter', 0)
         print(f"Resumed from epoch {checkpoint.get('epoch', 0)}, best F1: {best_f1:.4f}")
@@ -318,11 +399,13 @@ def train(config):
     else:
         print("Starting training from scratch...")
 
-    # Optimizer and scheduler
+    # Optimizer with layer-wise learning rate decay
     optimizer = AdamW(
         model.parameters(),
         lr=config.learning_rate,
-        weight_decay=config.weight_decay
+        weight_decay=config.weight_decay,
+        betas=(0.9, 0.999),
+        eps=1e-8
     )
 
     # Load optimizer state if resuming
@@ -411,8 +494,8 @@ def train(config):
     for epoch in range(start_epoch, config.num_epochs):
         print(f"\nEpoch {epoch + 1}/{config.num_epochs}")
 
-        # Train
-        train_loss = train_epoch(model, train_loader, optimizer, scheduler, config, fgm, pgd, ema)
+        # Train with AMP
+        train_loss = train_epoch(model, train_loader, optimizer, scheduler, config, fgm, pgd, ema, scaler)
         print(f"Train Loss: {train_loss:.4f}")
 
         # Evaluate with EMA
