@@ -13,7 +13,7 @@ class Config:
     # hidden_size = 1024
 
     # 选项2: Erlangshen-MegatronBert-1.3B (13亿参数，推荐)
-    model_name = "IDEA-CCNL/Erlangshen-MegatronBert-1.3B"
+    model_name = "/root/cw_ws/weishenfuyong/models/Erlangshen-MegatronBert-1.3B"
     hidden_size = 2048
 
     # 选项3: 如果上面的模型下载失败，使用MacBERT-Large

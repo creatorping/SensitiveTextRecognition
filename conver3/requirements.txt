@@ -1,6 +1,0 @@
-# torch - 使用Docker镜像预装版本，避免驱动不兼容
-transformers>=4.30.0
-tqdm>=4.65.0
-scikit-learn>=1.3.0
-numpy>=1.24.0
-torchcrf>=1.1.0
