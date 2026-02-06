@@ -1,6 +1,10 @@
 """
 Training script with adversarial training and model smoothing
 """
+import os
+# 在导入torch之前设置CUDA设备，确保使用指定的GPU
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"  # 使用第二块GPU，改成"0"使用第一块
+
 import torch
 import torch.nn as nn
 from torch.optim import AdamW
@@ -8,7 +12,6 @@ from transformers import get_linear_schedule_with_warmup
 from tqdm import tqdm
 import numpy as np
 import random
-import os
 from sklearn.metrics import f1_score, precision_score, recall_score
 
 from config import Config
@@ -266,6 +269,21 @@ def train(config):
     """Main training function"""
     # Set seed
     set_seed(config.seed)
+
+    # 打印GPU信息
+    print("="*60)
+    print("GPU Configuration")
+    print("="*60)
+    if torch.cuda.is_available():
+        print(f"CUDA Available: True")
+        print(f"CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES', 'Not set')}")
+        print(f"Number of GPUs visible: {torch.cuda.device_count()}")
+        print(f"Current device: {config.device}")
+        print(f"GPU Name: {torch.cuda.get_device_name(0)}")
+        print(f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB")
+    else:
+        print("CUDA Available: False, using CPU")
+    print("="*60)
 
     # Create dataloaders
     print("Loading data...")

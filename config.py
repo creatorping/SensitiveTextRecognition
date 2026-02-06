@@ -4,11 +4,40 @@ Configuration for Nested Privacy Entity Recognition
 import torch
 
 class Config:
-    # Model settings
-    # 使用本地模型路径
+    # ========== 模型选择 ==========
+    # 可选模型（按性能从低到高排序）:
+    # 1. chinese-roberta-wwm-ext-large (1024 hidden, 推荐基线)
+    # 2. chinese-macbert-large (1024 hidden, 更好的MLM预训练)
+    # 3. ernie-3.0-base-zh (768 hidden, 百度ERNIE)
+    # 4. chinese-lert-large (1024 hidden, 词汇增强)
+    # 5. Erlangshen-MegatronBert-1.3B (2048 hidden, 13亿参数，需要更多显存)
+    # 6. chinese-alpaca-2-13b (5120 hidden, 130亿参数LLM，需要量化)
+
+    # ========== 推荐的更强模型配置 ==========
+    # 选项1: MacBERT-Large (推荐，性能提升明显，显存需求适中)
+    # model_name = "hfl/chinese-macbert-large"
+    # hidden_size = 1024
+
+    # 选项2: LERT-Large (词汇增强，对NER任务效果好)
+    # model_name = "hfl/chinese-lert-large"
+    # hidden_size = 1024
+
+    # 选项3: Erlangshen-MegatronBert-1.3B (13亿参数，H800可以轻松运行)
+    # model_name = "IDEA-CCNL/Erlangshen-MegatronBert-1.3B"
+    # hidden_size = 2048
+
+    # 选项4: ChatGLM3-6B 作为编码器 (60亿参数，需要特殊处理)
+    # model_name = "THUDM/chatglm3-6b"
+    # hidden_size = 4096
+
+    # Model settings - 当前使用的模型
+    # 使用本地模型路径（如果有本地模型）或Hugging Face模型名
     model_name = "/root/nvme4n1/docker-data/overlay2/c9f7b6741dfcc1013d590cdaba3b9686650ef2eb2c2efe9b218b7f83b9208a37/diff/workspace/GPT_SoVITS/pretrained_models/chinese-roberta-wwm-ext-large"  # Chinese BERT model
+    # 如果要使用更强的模型，取消下面的注释：
+    # model_name = "IDEA-CCNL/Erlangshen-MegatronBert-1.3B"  # 13亿参数大模型
+
     max_length = 512
-    hidden_size = 1024  # 使用large模型，hidden_size为1024
+    hidden_size = 1024  # RoBERTa-large: 1024, MegatronBert-1.3B: 2048
     num_labels = 28  # 9 entity types (BI, CNU, EDU, JOB, JOB_ADDS, LOC, MS, PC, PI) × 3 prefixes (B/I/E) + O
 
     # Span-based settings
@@ -51,8 +80,9 @@ class Config:
     # Label smoothing
     label_smoothing = 0.1  # Re-enabled with conservative value
 
-    # Device
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    # Device - 指定使用第二块GPU (cuda:1)
+    gpu_id = 1  # 0表示第一块GPU，1表示第二块GPU，以此类推
+    device = torch.device(f'cuda:{gpu_id}' if torch.cuda.is_available() else 'cpu')
 
     # Paths
     train_data_path = "data/409_data_train.txt"
